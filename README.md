@@ -5,6 +5,26 @@ Lenovo 태블릿이 없을 때 사용할 로컬 수신 서버도 포함합니다
 
 이 저장소에는 로봇 제어 코드와 Android 앱 소스가 없습니다. 화면 상태 전송만 담당합니다.
 
+## 한눈에 보기
+
+로봇 프로그램은 상태 변경을 큐에 넣고 바로 제어 흐름으로 돌아갑니다. HTTP 전송은 별도 작업 스레드가 처리합니다.
+
+```mermaid
+flowchart LR
+    A["로봇 상태 변경"] --> B["display.state(state)"]
+    B --> C["Bounded queue"]
+    C --> D["Background worker"]
+    D --> E{"연결 대상"}
+    E -->|노트북 시험| F["Local simulator"]
+    E -->|현장 운용| G["Lenovo Y700 API"]
+    F --> H["/admin 상태 이력"]
+    G --> I["관객용 상태 UI"]
+    D -.-> J["전송 실패: timeout · retry"]
+    J -.-> C
+```
+
+태블릿 응답과 Wi-Fi 연결 상태는 로봇 인식·계획·모션의 성공 조건으로 사용하지 않습니다.
+
 ## 준비
 
 - Python 3.10 이상
@@ -80,14 +100,29 @@ display.close()
 
 ## 상태 코드
 
-상태 코드는 [`contract/states.json`](contract/states.json)에서 관리합니다. 먼저 연결할 권장 흐름은 다음과 같습니다.
+상태 코드는 [`contract/states.json`](contract/states.json)에서 관리합니다. 정상 흐름은 다음과 같습니다.
 
-```text
-STARTING → DETECTING_TOOL → PLANNING → PICKING_TOOL
-→ MOVING_TO_HANDOVER → HAND_TRACKING → COMPLETED
+```mermaid
+flowchart LR
+    STARTING --> READY
+    READY --> REQUEST_RECEIVED
+    REQUEST_RECEIVED --> DETECTING_TOOL
+    DETECTING_TOOL --> PLANNING
+    PLANNING --> PICKING_TOOL
+    PICKING_TOOL --> MOVING_TO_HANDOVER
+    MOVING_TO_HANDOVER --> WAITING_FOR_HAND
+    WAITING_FOR_HAND --> HAND_TRACKING
+    HAND_TRACKING --> WAITING_FOR_RELEASE
+    WAITING_FOR_RELEASE --> RELEASING_TOOL
+    RELEASING_TOOL --> RETURNING
+    RETURNING --> COMPLETED
+
+    ANY["어느 단계"] -.-> SAFE_WAIT
+    SAFE_WAIT -.-> READY
+    ANY -.-> ERROR
 ```
 
-예외가 발생하면 `ERROR`를 보냅니다. `READY`, `REQUEST_RECEIVED`, `WAITING_FOR_RELEASE`, `SAFE_WAIT`는 로봇 동작 정의를 확인한 뒤 연결합니다.
+`SAFE_WAIT`는 복구 가능한 안전 대기, `ERROR`는 담당자 확인이 필요한 오류입니다. `READY`, `REQUEST_RECEIVED`, `WAITING_FOR_RELEASE`, `SAFE_WAIT`의 실제 발생 시점은 로봇 동작 정의를 확인한 뒤 확정합니다.
 
 ## 구조
 
