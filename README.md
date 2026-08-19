@@ -104,22 +104,15 @@ display.close()
 
 ```mermaid
 flowchart LR
-    STARTING --> READY
-    READY --> REQUEST_RECEIVED
-    REQUEST_RECEIVED --> DETECTING_TOOL
-    DETECTING_TOOL --> PLANNING
-    PLANNING --> PICKING_TOOL
-    PICKING_TOOL --> MOVING_TO_HANDOVER
-    MOVING_TO_HANDOVER --> WAITING_FOR_HAND
-    WAITING_FOR_HAND --> HAND_TRACKING
-    HAND_TRACKING --> WAITING_FOR_RELEASE
-    WAITING_FOR_RELEASE --> RELEASING_TOOL
-    RELEASING_TOOL --> RETURNING
-    RETURNING --> COMPLETED
+    A["준비<br/>STARTING → READY"] --> B["요청<br/>REQUEST_RECEIVED"]
+    B --> C["탐색<br/>DETECTING_TOOL → PLANNING"]
+    C --> D["집기<br/>PICKING_TOOL"]
+    D --> E["전달<br/>MOVING_TO_HANDOVER<br/>→ WAITING_FOR_HAND<br/>→ HAND_TRACKING<br/>→ WAITING_FOR_RELEASE<br/>→ RELEASING_TOOL"]
+    E --> F["복귀·완료<br/>RETURNING → COMPLETED"]
 
-    ANY["어느 단계"] -.-> SAFE_WAIT
-    SAFE_WAIT -.-> READY
-    ANY -.-> ERROR
+    X["어느 단계"] -.-> S["SAFE_WAIT"]
+    S -.-> A
+    X -.-> R["ERROR"]
 ```
 
 `SAFE_WAIT`는 복구 가능한 안전 대기, `ERROR`는 담당자 확인이 필요한 오류입니다. `READY`, `REQUEST_RECEIVED`, `WAITING_FOR_RELEASE`, `SAFE_WAIT`의 실제 발생 시점은 로봇 동작 정의를 확인한 뒤 확정합니다.
