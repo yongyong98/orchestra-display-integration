@@ -25,7 +25,17 @@ class HttpEventTransport:
         self._events_url = f"{base_url.rstrip('/')}/api/v1/events"
 
     def send(self, event: dict[str, Any], timeout_s: float) -> None:
-        body = json.dumps(event, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        try:
+            body = json.dumps(
+                event,
+                ensure_ascii=False,
+                allow_nan=False,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        except (TypeError, ValueError) as exc:
+            raise PermanentTransportError(
+                "event payload is not JSON-serializable"
+            ) from exc
         http_request = request.Request(
             self._events_url,
             data=body,

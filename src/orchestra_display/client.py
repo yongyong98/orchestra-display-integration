@@ -60,8 +60,10 @@ class RobotDisplay:
     def flush(self, timeout_s: float = 5.0) -> bool:
         return self._publisher.flush(timeout_s)
 
-    def close(self) -> None:
-        self._publisher.close()
+    def close(self, timeout_s: float = 2.0, *, drain: bool = True) -> None:
+        """Request worker shutdown and return within one caller timeout."""
+
+        self._publisher.close(timeout_s=timeout_s, drain=drain)
 
     def __enter__(self) -> RobotDisplay:
         return self
