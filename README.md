@@ -24,8 +24,6 @@ flowchart LR
     J -.-> C
 ```
 
-태블릿 응답과 Wi-Fi 연결 상태는 로봇 인식·계획·모션의 성공 조건으로 사용하지 않습니다.
-
 ## Getting Started
 
 - Python 3.10 이상
