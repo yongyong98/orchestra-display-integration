@@ -76,7 +76,7 @@ display = RobotDisplay(
 ```python
 display.state(RobotState.READY)
 display.listening_started()
-display.voice("그래스퍼를 회수해줘")
+display.voice("그래스퍼")
 display.state(RobotState.REQUEST_RECEIVED, tool="grasper")
 display.state(RobotState.PLANNING)
 display.state(RobotState.PICKING_TOOL, tool="grasper")
@@ -102,7 +102,7 @@ sequenceDiagram
     SDK-->>Y700: 요청 대기
     ASR->>SDK: listening_started()
     SDK-->>Y700: READY · 음성 인식 중
-    User->>ASR: "그래스퍼 주세요"
+    User->>ASR: "그래스퍼"
     ASR->>SDK: voice(final_text)
     SDK-->>Y700: READY · 인식 문장 확인
     alt 지원 도구 해석·명령 수락

@@ -29,7 +29,7 @@ def main() -> None:
 
     settings = PublisherSettings(heartbeat_interval_s=0)
     with RobotDisplay(args.url, args.robot_id, settings=settings) as display:
-        display.voice("그래스퍼를 회수해줘")
+        display.voice("그래스퍼")
         for state in SEQUENCE:
             queued = display.state(state, tool="grasper")
             print(f"queued={queued} state={state.value}")

@@ -39,7 +39,7 @@ def main() -> None:
 
         print(f"queued={display.listening_started()} substate=VOICE_LISTENING")
         time.sleep(max(args.interval, 0))
-        print(f"queued={display.voice('그래스퍼 주세요')} substate=RECOGNIZED_TEXT")
+        print(f"queued={display.voice('그래스퍼')} substate=RECOGNIZED_TEXT")
         time.sleep(max(args.interval, 0))
         print(
             "queued={} state={}".format(
