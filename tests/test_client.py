@@ -71,7 +71,7 @@ class RobotDisplayTest(unittest.TestCase):
             settings=PublisherSettings(heartbeat_interval_s=0),
         )
         self.assertTrue(display.state(RobotState.PREPARING))
-        self.assertTrue(display.voice("  그래스퍼를 회수해줘  "))
+        self.assertTrue(display.voice("  그래스퍼  "))
         self.assertTrue(display.state(RobotState.WAITING_FOR_HAND))
         self.assertTrue(display.state(RobotState.READY))
         self.assertTrue(display.flush())
@@ -80,11 +80,11 @@ class RobotDisplayTest(unittest.TestCase):
         self.assertEqual(transport.events[1]["state"], "PREPARING")
         self.assertEqual(
             transport.events[1]["payload"],
-            {"recognized_text": "그래스퍼를 회수해줘", "input_source": "voice"},
+            {"recognized_text": "그래스퍼", "input_source": "voice"},
         )
         self.assertEqual(
             transport.events[2]["payload"]["recognized_text"],
-            "그래스퍼를 회수해줘",
+            "그래스퍼",
         )
         self.assertNotIn("recognized_text", transport.events[3]["payload"])
 
@@ -111,7 +111,7 @@ class RobotDisplayTest(unittest.TestCase):
         )
 
         self.assertTrue(display.listening_started())
-        self.assertTrue(display.voice("그래스퍼 주세요"))
+        self.assertTrue(display.voice("그래스퍼"))
         self.assertTrue(display.listening_stopped())
         self.assertTrue(display.flush())
         display.close()
@@ -121,7 +121,7 @@ class RobotDisplayTest(unittest.TestCase):
         self.assertEqual(transport.events[1]["state"], "READY")
         self.assertEqual(
             transport.events[1]["payload"]["recognized_text"],
-            "그래스퍼 주세요",
+            "그래스퍼",
         )
         self.assertEqual(transport.events[2]["state"], "READY")
         self.assertEqual(transport.events[2]["payload"], {})

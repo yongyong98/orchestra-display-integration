@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Send the Receive–Place display sequence."""
+"""Play every Receive–Place screen for UI and connection verification.
+
+The fixed interval is only for visual inspection. For robot runtime integration, use
+``runtime_integration.py`` and call each hook from an existing state transition.
+"""
 
 from __future__ import annotations
 
@@ -29,7 +33,20 @@ def main() -> None:
 
     settings = PublisherSettings(heartbeat_interval_s=0)
     with RobotDisplay(args.url, args.robot_id, settings=settings) as display:
-        display.voice("그래스퍼")
+        for state in (RobotState.STARTING, RobotState.READY):
+            queued = display.state(state, tool="grasper")
+            print(f"queued={queued} state={state.value}")
+            time.sleep(max(args.interval, 0))
+
+        print(f"queued={display.listening_started()} substate=VOICE_LISTENING")
+        time.sleep(max(args.interval, 0))
+        queued = display.voice("그래스퍼")
+        print(f"queued={queued} substate=RECOGNIZED_TEXT")
+        time.sleep(max(args.interval, 0))
+        queued = display.state(RobotState.REQUEST_RECEIVED, tool="grasper")
+        print(f"queued={queued} state={RobotState.REQUEST_RECEIVED.value}")
+        time.sleep(max(args.interval, 0))
+
         for state in SEQUENCE:
             queued = display.state(state, tool="grasper")
             print(f"queued={queued} state={state.value}")

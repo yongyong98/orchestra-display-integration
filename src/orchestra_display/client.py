@@ -58,7 +58,7 @@ class RobotDisplay:
             return False
 
     def voice(self, text: str) -> bool:
-        """Queue one finalized speech-recognition sentence."""
+        """Queue finalized recognition text; a tool noun is recommended."""
         try:
             return self._publisher.emit_voice(text)
         except (AttributeError, ValueError, TypeError):

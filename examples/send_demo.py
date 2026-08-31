@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Send a short instrument-handover sequence."""
+"""Play every Pick–Handover screen for UI and connection verification.
+
+The fixed interval is only for visual inspection. For robot runtime integration, use
+``runtime_integration.py`` and call each hook from an existing state transition.
+"""
 
 from __future__ import annotations
 
@@ -16,7 +20,7 @@ ACTION_SEQUENCE = (
     RobotState.MOVING_TO_HANDOVER,
     RobotState.WAITING_FOR_HAND,
     RobotState.HAND_TRACKING,
-    RobotState.WAITING_FOR_RELEASE,
+    RobotState.WAITING_FOR_RELEASE,  # Optional in runtime; included for UI coverage.
     RobotState.RELEASING_TOOL,
     RobotState.RETURNING,
     RobotState.COMPLETED,

@@ -185,10 +185,10 @@ Receive–Place 예제 실행이 가능합니다. 실제 현장 연동에는 다
 - [API 전체 명세](https://freeskyes.github.io/orchestra-display/)
 - 실제 RB-Y1 runtime에서 상태를 보낼 함수 지점
 
-로봇 개발자는 `examples/send_demo.py`와 `examples/send_receive_place.py`로 Y700
-연결과 호출 순서를 확인한 뒤, 같은 호출을 아래 표의 시점에 맞춰 기존 runtime의
-상태 전환 지점에 연결합니다. 예제의 `time.sleep()`은 화면 시험용이며 실제 모션의
-전환 조건으로 사용하지 않습니다.
+`examples/send_demo.py`와 `examples/send_receive_place.py`는 Y700 연결과 전체 화면
+순서를 확인하는 시험용입니다. 실제 runtime 연동은 `examples/runtime_integration.py`의
+event hook 형태를 참고하여 아래 표의 상태 전환 지점에 연결합니다. 화면 시험 예제의
+`time.sleep()`은 실제 모션의 전환 조건으로 사용하지 않습니다.
 
 ### 상태 emit 시점
 

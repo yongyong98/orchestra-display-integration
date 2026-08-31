@@ -93,7 +93,7 @@ class EventFactory:
             )
 
     def voice(self, text: str) -> DisplayEvent:
-        """Attach one finalized speech-recognition sentence to the current state."""
+        """Attach finalized recognition text, normally a tool noun, to the state."""
         normalized = text.strip()
         if not normalized or len(normalized) > 80:
             raise ValueError("voice text must contain 1-80 characters")
