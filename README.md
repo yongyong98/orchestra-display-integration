@@ -3,11 +3,12 @@
 로봇 프로그램이 Orchestra Display에 상태를 보내기 위한 Python 클라이언트입니다.
 Lenovo 태블릿이 없을 때 사용할 로컬 수신 서버도 포함합니다.
 
-이 저장소에는 로봇 제어 코드와 Android 앱 소스가 없습니다. 화면 상태 전송만 담당합니다.
+로봇 제어 코드와 Android 앱은 포함하지 않습니다.
 
-## 한눈에 보기
+## Overview
 
-로봇 프로그램은 상태 변경을 큐에 넣고 바로 제어 흐름으로 돌아갑니다. HTTP 전송은 별도 작업 스레드가 처리합니다.
+`display.state()`는 상태를 큐에 넣고 바로 반환합니다. HTTP 전송은 별도 작업
+스레드에서 처리합니다.
 
 ```mermaid
 flowchart LR
@@ -25,7 +26,7 @@ flowchart LR
 
 태블릿 응답과 Wi-Fi 연결 상태는 로봇 인식·계획·모션의 성공 조건으로 사용하지 않습니다.
 
-## 준비
+## Getting Started
 
 - Python 3.10 이상
 - 외부 런타임 패키지 없음
@@ -36,7 +37,7 @@ cd orchestra-display-integration
 python3 -m pip install -e .
 ```
 
-## Lenovo 없이 통신 확인
+## Local Simulator
 
 첫 번째 터미널에서 로컬 수신 서버를 실행합니다.
 
@@ -56,16 +57,16 @@ python3 examples/send_demo.py
 http://127.0.0.1:8080/admin
 ```
 
-이 테스트는 요청 형식, 비동기 큐, 상태 순서와 재시도를 확인합니다. 실제 Lenovo
-화면과 Wi-Fi 연결은 장비가 준비된 뒤 다시 확인합니다.
+로컬 테스트에서는 요청 형식, 비동기 큐, 상태 순서와 재시도를 확인할 수 있습니다.
+Lenovo 화면과 Wi-Fi 연결은 실제 장비에서 별도로 확인합니다.
 
 `send_demo.py`와 `send_receive_place.py`의 `time.sleep()`은 화면을 확인하기 위한
 간격입니다. 실제 로봇의 상태 전환 조건으로 사용하지 않습니다.
 
-## 로봇 코드 연동
+## Runtime Integration
 
-실제 runtime 연결 형태는 [`examples/runtime_integration.py`](examples/runtime_integration.py)를
-참고합니다. 각 hook을 기존 runtime의 해당 상태 전환 지점에서 호출합니다.
+실제 로봇 코드에서는 [`examples/runtime_integration.py`](examples/runtime_integration.py)처럼
+기존 runtime의 상태 전환 지점에서 Display hook을 호출합니다.
 
 프로그램 시작 시 한 번 생성합니다.
 
@@ -90,13 +91,13 @@ display.state(RobotState.PICKING_TOOL, tool="grasper")
 display.state(RobotState.MOVING_TO_HANDOVER, tool="grasper")
 ```
 
-음성 인식에서 확정된 도구명 하나만 보냅니다. 오디오, confidence, 중간 인식 결과는
-보내지 않습니다. `listening_started()`와 `voice()`가 만드는 화면은 모두 `READY`
-내부 substate이며 공식 state는 19개로 유지됩니다. 취소·인식 실패 시에만
+음성 인식에서 확정된 도구명만 보냅니다. 오디오, confidence, 중간 인식 결과는
+보내지 않습니다. `listening_started()`와 `voice()`는 별도 RobotState가 아니라
+`READY` 내부 화면입니다. 취소하거나 인식에 실패했을 때는
 `listening_stopped()`로 기본 요청 대기에 돌아갑니다. `REQUEST_RECEIVED`는 ASR
 완료가 아니라 지원 도구 확인과 로봇 명령 수락 뒤에 보냅니다.
 
-### 음성 요청 흐름
+### Voice Request Flow
 
 ```mermaid
 sequenceDiagram
@@ -110,7 +111,7 @@ sequenceDiagram
     ASR->>SDK: listening_started()
     SDK-->>Y700: READY · 음성 인식 중
     User->>ASR: "그래스퍼"
-    ASR->>SDK: voice(final_text)
+    ASR->>SDK: voice(tool_name)
     SDK-->>Y700: READY · 인식 문장 확인
     alt 지원 도구 해석·명령 수락
         ASR->>SDK: state(REQUEST_RECEIVED, tool)
@@ -124,7 +125,7 @@ sequenceDiagram
 `voice()` 호출만으로 로봇 동작을 시작하지 않습니다. 요청 계층이 도구명을 검증하고
 명령을 수락한 뒤 `REQUEST_RECEIVED`를 보낸 다음 기존 runtime을 호출합니다.
 
-Receive–Place도 상태가 바뀌는 지점에서 한 줄씩 호출합니다.
+Receive–Place도 상태가 바뀔 때 같은 방식으로 호출합니다.
 
 ```python
 display.state(RobotState.PREPARING)
@@ -136,38 +137,38 @@ display.state(RobotState.RETURNING)
 display.state(RobotState.READY)
 ```
 
-추가 `workflow` 인자는 없습니다. 앱이 최근 state로 Pick–Handover와 Receive–Place를
-자동 구분합니다.
+`workflow`를 따로 보낼 필요는 없습니다. 앱이 최근 state를 기준으로
+Pick–Handover와 Receive–Place를 구분합니다.
 
-프로그램을 종료할 때 전송 작업을 정리합니다.
+프로그램을 종료할 때 `close()`를 호출합니다.
 
 ```python
 display.close()
 ```
 
-`state()`는 네트워크 전송 완료를 기다리지 않습니다. 반환값이나 태블릿 연결 상태를 로봇 동작 조건으로 사용하지 마세요.
+`state()`는 네트워크 전송 완료를 기다리지 않습니다. 반환값이나 태블릿 연결 상태를
+로봇 동작 조건으로 사용하지 마세요.
 
-## Lenovo Y700 연결
+## Lenovo Y700 Setup
 
-로컬 테스트와 Lenovo 연동의 코드 차이는 주소뿐입니다.
+클라이언트 코드에서는 `tablet_url`만 바뀝니다.
 
 | 환경 | 주소 |
 |---|---|
 | 노트북 내부 테스트 | `http://127.0.0.1:8080` |
 | 도구 전달 로봇 Lenovo 예시 | `http://10.77.0.10:8080` |
 
-현장 연결 전 다음 항목을 확인합니다.
+현장 연결 전:
 
-- Lenovo Y700에 Orchestra Display `v0.3.0` APK가 설치되어 있어야 합니다.
+- Lenovo Y700에 Orchestra Display `v0.3.0` APK를 설치합니다.
 - 로봇 노트북과 Y700은 같은 네트워크에 연결합니다.
 - 공유기의 DHCP 예약으로 Y700 주소를 고정합니다.
 - `tablet_url`에는 실제 Y700 주소와 API 포트 `8080`을 설정합니다.
 - 요청·응답 필드는 [API 전체 명세](https://freeskyes.github.io/orchestra-display/)에서 확인합니다.
 
-## 상태 코드
+## State Flow
 
 19개 상태 코드는 [`contract/states.json`](contract/states.json)에서 관리합니다.
-두 정상 흐름은 다음과 같습니다.
 
 ```mermaid
 flowchart TB
@@ -178,13 +179,13 @@ flowchart TB
     R -.-> S
 ```
 
-### 호출 시점
+### State Timing
 
-| 화면 상태 | 정확한 호출 시점 |
+| 화면 상태 | 호출 시점 |
 |---|---|
 | `STARTING` | 프로그램·모델 초기화를 시작하기 직전 |
 | `READY` | 준비 자세와 요청 수신기가 모두 준비된 직후, 또는 정상 복귀 완료 후 |
-| `REQUEST_RECEIVED` | 확정 도구명을 확인하고 명령을 수락한 직후, runtime 실행 전 |
+| `REQUEST_RECEIVED` | 도구명 검증과 명령 수락 직후, runtime 실행 전 |
 | `DETECTING_TOOL` | 요청 도구 탐색 함수를 호출하기 직전 |
 | `PLANNING` | 팔 선택과 경로 계획을 시작하기 직전 |
 | `PICKING_TOOL` | pregrasp·grasp와 그리퍼 close를 시작하기 직전 |
@@ -202,10 +203,10 @@ flowchart TB
 | `SAFE_WAIT` | runtime이 복구·resume 가능한 hold를 명시적으로 판정했을 때만 |
 | `ERROR` | 원인을 알 수 없거나 실행을 종료하는 최상위 예외 처리에서 |
 
-음성은 마이크 입력 시작 시 `listening_started()`, 도구명 확정 시 `voice()`,
-지원 도구 해석과 명령 수락 완료 시 `REQUEST_RECEIVED` 순서로 호출합니다.
+음성 요청은 `listening_started()` → `voice()` → `REQUEST_RECEIVED` 순서입니다.
+`REQUEST_RECEIVED`는 도구명 확인과 명령 수락이 끝난 뒤 호출합니다.
 
-## 구조
+## Project Structure
 
 ```text
 src/orchestra_display/
@@ -216,9 +217,9 @@ src/orchestra_display/
 └── simulator.py    # Lenovo 없는 로컬 수신 테스트
 ```
 
-각 책임은 인터페이스 경계로 분리되어 있습니다. 테스트에서는 HTTP 대신 가짜 transport를 주입할 수 있습니다.
+테스트에서는 가짜 transport를 주입해 HTTP 연결 없이 전송 동작을 확인합니다.
 
-## 테스트
+## Tests
 
 ```bash
 PYTHONPATH=src python3 -m unittest discover -s tests -p 'test_*.py'
