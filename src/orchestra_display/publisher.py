@@ -50,6 +50,8 @@ class AsyncEventPublisher:
             maxsize=settings.queue_size
         )
         self._closed = False
+        self._state_lock = threading.Lock()
+        self._heartbeat_pending = False
         self._heartbeat_stop = threading.Event()
         self._worker = threading.Thread(
             target=self._run,
@@ -74,6 +76,12 @@ class AsyncEventPublisher:
         event = self._event_factory.state(state, display_message, payload)
         return self._enqueue(event.as_dict())
 
+    def emit_voice(self, text: str) -> bool:
+        return self._enqueue(self._event_factory.voice(text).as_dict())
+
+    def emit_listening(self, active: bool) -> bool:
+        return self._enqueue(self._event_factory.listening(active).as_dict())
+
     def emit_heartbeat(self, payload: dict[str, Any] | None = None) -> bool:
         return self._enqueue(self._event_factory.heartbeat(payload).as_dict())
 
@@ -84,12 +92,13 @@ class AsyncEventPublisher:
         return self._queue.unfinished_tasks == 0
 
     def close(self, timeout_s: float = 2.0) -> None:
-        if self._closed:
-            return
+        with self._state_lock:
+            if self._closed:
+                return
+            self._closed = True
         self._heartbeat_stop.set()
         if self._heartbeat_worker.is_alive():
             self._heartbeat_worker.join(timeout=timeout_s)
-        self._closed = True
         self.flush(timeout_s)
         try:
             self._queue.put_nowait(None)
@@ -98,13 +107,20 @@ class AsyncEventPublisher:
         self._worker.join(timeout=timeout_s)
 
     def _enqueue(self, event: dict[str, Any]) -> bool:
-        if self._closed:
-            return False
+        is_heartbeat = event["event_type"] == "HEARTBEAT"
+        with self._state_lock:
+            if self._closed:
+                return False
+            if is_heartbeat:
+                if self._heartbeat_pending:
+                    return False
+                self._heartbeat_pending = True
         try:
             self._queue.put_nowait(event)
             return True
         except queue.Full:
-            if event["event_type"] == "HEARTBEAT":
+            if is_heartbeat:
+                self._complete_heartbeat()
                 return False
             self._drop_oldest()
             try:
@@ -117,6 +133,8 @@ class AsyncEventPublisher:
         try:
             dropped = self._queue.get_nowait()
             self._queue.task_done()
+            if dropped is not None and dropped["event_type"] == "HEARTBEAT":
+                self._complete_heartbeat()
             LOGGER.warning(
                 "display queue full; dropped event %s",
                 None if dropped is None else dropped.get("event_id"),
@@ -132,6 +150,8 @@ class AsyncEventPublisher:
                     return
                 self._send_with_retry(event)
             finally:
+                if event is not None and event["event_type"] == "HEARTBEAT":
+                    self._complete_heartbeat()
                 self._queue.task_done()
 
     def _run_heartbeat(self) -> None:
@@ -140,7 +160,10 @@ class AsyncEventPublisher:
             self.emit_heartbeat({"source": "orchestra-display-integration"})
 
     def _send_with_retry(self, event: dict[str, Any]) -> None:
-        for attempt in range(self._settings.max_attempts):
+        max_attempts = (
+            1 if event["event_type"] == "HEARTBEAT" else self._settings.max_attempts
+        )
+        for attempt in range(max_attempts):
             try:
                 self._transport.send(event, self._settings.request_timeout_s)
                 return
@@ -148,6 +171,10 @@ class AsyncEventPublisher:
                 LOGGER.error("display event rejected: %s", exc)
                 return
             except RetryableTransportError:
-                if attempt + 1 < self._settings.max_attempts:
+                if attempt + 1 < max_attempts:
                     time.sleep(min(0.25 * (2**attempt), 2.0))
         LOGGER.warning("display event delivery failed: %s", event["event_id"])
+
+    def _complete_heartbeat(self) -> None:
+        with self._state_lock:
+            self._heartbeat_pending = False

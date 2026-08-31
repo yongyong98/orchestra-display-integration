@@ -74,10 +74,63 @@ display = RobotDisplay(
 화면의 의미가 바뀌는 지점에서 상태를 보냅니다.
 
 ```python
+display.state(RobotState.READY)
+display.listening_started()
+display.voice("그래스퍼")
+display.state(RobotState.REQUEST_RECEIVED, tool="grasper")
 display.state(RobotState.PLANNING)
 display.state(RobotState.PICKING_TOOL, tool="grasper")
 display.state(RobotState.MOVING_TO_HANDOVER, tool="grasper")
 ```
+
+음성은 인식 완료 문장 하나만 보냅니다. 오디오, confidence, 중간 인식 결과는
+보내지 않습니다. `listening_started()`와 `voice()`가 만드는 화면은 모두 `READY`
+내부 substate이며 공식 state는 19개로 유지됩니다. 취소·인식 실패 시에만
+`listening_stopped()`로 기본 요청 대기에 돌아갑니다. `REQUEST_RECEIVED`는 ASR
+완료가 아니라 지원 도구 해석과 로봇 명령 수락 뒤에 보냅니다.
+
+### 음성 요청 흐름
+
+```mermaid
+sequenceDiagram
+    actor User as 사용자
+    participant ASR as 요청 수신·ASR
+    participant SDK as RobotDisplay
+    participant Y700 as Lenovo Y700
+
+    ASR->>SDK: state(READY)
+    SDK-->>Y700: 요청 대기
+    ASR->>SDK: listening_started()
+    SDK-->>Y700: READY · 음성 인식 중
+    User->>ASR: "그래스퍼"
+    ASR->>SDK: voice(final_text)
+    SDK-->>Y700: READY · 인식 문장 확인
+    alt 지원 도구 해석·명령 수락
+        ASR->>SDK: state(REQUEST_RECEIVED, tool)
+        SDK-->>Y700: 요청 접수
+    else 취소·무음·지원하지 않는 요청
+        ASR->>SDK: listening_stopped()
+        SDK-->>Y700: 기본 READY 복귀
+    end
+```
+
+`voice()` 호출만으로 로봇 동작을 시작하지 않습니다. 요청 계층이 문장을 검증하고
+명령을 수락한 뒤 `REQUEST_RECEIVED`를 보낸 다음 기존 runtime을 호출합니다.
+
+Receive–Place도 상태가 바뀌는 지점에서 한 줄씩 호출합니다.
+
+```python
+display.state(RobotState.PREPARING)
+display.state(RobotState.WAITING_FOR_HAND)
+display.state(RobotState.WAITING_FOR_TOOL)
+display.state(RobotState.RECEIVING_TOOL)
+display.state(RobotState.PLACING_TOOL)
+display.state(RobotState.RETURNING)
+display.state(RobotState.READY)
+```
+
+추가 `workflow` 인자는 없습니다. 앱이 최근 state로 Pick–Handover와 Receive–Place를
+자동 구분합니다.
 
 프로그램을 종료할 때 전송 작업을 정리합니다.
 
@@ -100,22 +153,86 @@ display.close()
 
 ## 상태 코드
 
-상태 코드는 [`contract/states.json`](contract/states.json)에서 관리합니다. 정상 흐름은 다음과 같습니다.
+19개 상태 코드는 [`contract/states.json`](contract/states.json)에서 관리합니다.
+두 정상 흐름은 다음과 같습니다.
 
 ```mermaid
-flowchart LR
-    A["준비<br/>STARTING → READY"] --> B["요청<br/>REQUEST_RECEIVED"]
-    B --> C["탐색<br/>DETECTING_TOOL → PLANNING"]
-    C --> D["집기<br/>PICKING_TOOL"]
-    D --> E["전달<br/>MOVING_TO_HANDOVER<br/>→ WAITING_FOR_HAND<br/>→ HAND_TRACKING<br/>→ WAITING_FOR_RELEASE<br/>→ RELEASING_TOOL"]
-    E --> F["복귀·완료<br/>RETURNING → COMPLETED"]
-
-    X["어느 단계"] -.-> S["SAFE_WAIT"]
-    S -.-> A
-    X -.-> R["ERROR"]
+flowchart TB
+    A["STARTING → READY → REQUEST_RECEIVED"] --> B{"요청 종류"}
+    B -->|Pick–Handover| P["DETECTING_TOOL → PLANNING → PICKING_TOOL<br/>→ MOVING_TO_HANDOVER → WAITING_FOR_HAND<br/>→ HAND_TRACKING → WAITING_FOR_RELEASE<br/>→ RELEASING_TOOL → RETURNING → COMPLETED"]
+    B -->|Receive–Place| R["PREPARING → WAITING_FOR_HAND → WAITING_FOR_TOOL<br/>→ RECEIVING_TOOL → PLACING_TOOL → RETURNING → READY"]
+    P -.-> S["SAFE_WAIT / ERROR"]
+    R -.-> S
 ```
 
-`SAFE_WAIT`는 복구 가능한 안전 대기, `ERROR`는 담당자 확인이 필요한 오류입니다. `READY`, `REQUEST_RECEIVED`, `WAITING_FOR_RELEASE`, `SAFE_WAIT`의 실제 발생 시점은 로봇 동작 정의를 확인한 뒤 확정합니다.
+`READY`는 로봇 준비 자세와 요청 수신기가 모두 준비됐을 때 또는 정상 복귀 후,
+`REQUEST_RECEIVED`는 지원 도구로 해석한 명령을 수락한 뒤 보냅니다.
+`WAITING_FOR_RELEASE`는 기존 runtime에 안정적인 인계 대기 신호가 있을 때만 사용하고
+없으면 생략합니다. `SAFE_WAIT`는 복구·resume 가능한 명시적 hold에만 사용하며,
+원인 불명 또는 종료 예외는 `ERROR`입니다.
+
+화면 컬러는 진행·대기 상태가 초록, `COMPLETED`가 파랑, `SAFE_WAIT`가 노랑,
+`ERROR`가 빨강입니다.
+
+## 로봇 개발자 전달 기준
+
+이 저장소의 `main`만 clone해도 SDK 설치, 로컬 simulator, Pick–Handover와
+Receive–Place 예제 실행이 가능합니다. 실제 현장 연동에는 다음 외부 정보가 함께
+필요합니다.
+
+- Lenovo Y700에 설치된 Orchestra Display `v0.3.0` APK
+- Y700의 고정 IP와 API 포트 `8080`
+- [API 전체 명세](https://freeskyes.github.io/orchestra-display/)
+- 실제 RB-Y1 runtime에서 상태를 보낼 함수 지점
+
+로봇 개발자는 먼저 `examples/send_demo.py`로 Y700 연결을 확인한 뒤, 같은 호출을
+기존 runtime의 상태 전환 지점에 옮깁니다. 이 저장소를 로봇 제어 소스와 합치거나
+SDK 응답을 모션 조건으로 사용할 필요는 없습니다.
+
+### 상태 emit 시점
+
+| 화면 상태 | 정확한 호출 시점 |
+|---|---|
+| `STARTING` | 프로그램·모델 초기화를 시작하기 직전 |
+| `READY` | 준비 자세와 요청 수신기가 모두 준비된 직후, 또는 정상 복귀 완료 후 |
+| `REQUEST_RECEIVED` | 최종 문장을 지원 도구로 해석하고 명령을 수락한 직후, runtime 실행 전 |
+| `DETECTING_TOOL` | 요청 도구 탐색 함수를 호출하기 직전 |
+| `PLANNING` | 팔 선택과 경로 계획을 시작하기 직전 |
+| `PICKING_TOOL` | pregrasp·grasp와 그리퍼 close를 시작하기 직전 |
+| `MOVING_TO_HANDOVER` | 파지 성공 후 전달 위치 이동을 시작하기 직전 |
+| `WAITING_FOR_HAND` | 안정적인 손 위치 획득을 기다리기 직전 |
+| `HAND_TRACKING` | 손 identity lock 성공 후 추적 servo를 시작하기 직전 |
+| `WAITING_FOR_RELEASE` | 기존 runtime이 안정적인 인계 대기 신호를 제공할 때만. 없으면 생략 |
+| `RELEASING_TOOL` | 인계 신호 확인 후 그리퍼 open 직전 |
+| `RETURNING` | 전달·배치 후 준비 자세 복귀를 시작하기 직전 |
+| `COMPLETED` | 전달 성공을 확인한 직후, `READY` 전환 전 |
+| `PREPARING` | 트레이 등록·점유 확인·빈 위치 선택을 시작하기 직전 |
+| `WAITING_FOR_TOOL` | fixed hold 도달 후 도구 삽입을 기다리기 직전 |
+| `RECEIVING_TOOL` | 삽입 신호 확인 후 그리퍼 close 직전 |
+| `PLACING_TOOL` | preplace·place·open·retreat 순서를 시작하기 직전 |
+| `SAFE_WAIT` | runtime이 복구·resume 가능한 hold를 명시적으로 판정했을 때만 |
+| `ERROR` | 원인을 알 수 없거나 실행을 종료하는 최상위 예외 처리에서 |
+
+음성은 마이크 입력 시작 시 `listening_started()`, 최종 문장 확정 시 `voice()`,
+지원 도구 해석과 명령 수락 완료 시 `REQUEST_RECEIVED` 순서로 호출합니다.
+
+### 그대로 전달할 구현 지시
+
+```text
+이 저장소의 README와 contract/states.json을 기준으로 기존 로봇 runtime에
+Orchestra Display 상태 전송을 연동해 주세요.
+
+1. RobotDisplay는 프로그램 시작 시 한 번만 생성하고 종료 시 close()합니다.
+2. 위 '상태 emit 시점'의 실제 코드 직전·직후에만 state()를 한 번 호출합니다.
+3. 매 프레임·제어 주기에는 호출하지 않습니다.
+4. WAITING_FOR_RELEASE는 기존의 안정적인 인계 신호가 있을 때만 연결하고,
+   새로운 힘·거리 임계값을 만들지 않습니다.
+5. SAFE_WAIT는 복구 가능한 명시적 hold에만 사용하고 나머지 종료 예외는 ERROR로 보냅니다.
+6. SDK 반환값, 태블릿 응답, Wi-Fi 상태를 로봇 모션의 실행·정지 조건으로 사용하지 않습니다.
+7. 기존 인식·계획·모션 로직과 안전 조건은 변경하지 않습니다.
+8. 구현 후 file:function 기준으로 각 상태를 넣은 위치와 선행 조건을 표로 보고하고,
+   simulator와 Y700에서 정상 흐름·오류 흐름을 검증해 주세요.
+```
 
 ## 구조
 

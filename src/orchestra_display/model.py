@@ -24,6 +24,10 @@ class RobotState(str, Enum):
     RELEASING_TOOL = "RELEASING_TOOL"
     RETURNING = "RETURNING"
     COMPLETED = "COMPLETED"
+    PREPARING = "PREPARING"
+    WAITING_FOR_TOOL = "WAITING_FOR_TOOL"
+    RECEIVING_TOOL = "RECEIVING_TOOL"
+    PLACING_TOOL = "PLACING_TOOL"
     SAFE_WAIT = "SAFE_WAIT"
     ERROR = "ERROR"
 
@@ -61,6 +65,7 @@ class EventFactory:
         self._sequence = 0
         self._latest_state = RobotState.STARTING
         self._latest_payload: dict[str, Any] = {}
+        self._latest_voice_text: str | None = None
         self._lock = threading.Lock()
 
     def state(
@@ -71,13 +76,53 @@ class EventFactory:
     ) -> DisplayEvent:
         parsed = RobotState.parse(state)
         with self._lock:
+            if parsed is RobotState.READY:
+                self._latest_voice_text = None
+            merged_payload = dict(payload)
+            if self._latest_voice_text:
+                merged_payload.setdefault("recognized_text", self._latest_voice_text)
+                merged_payload.setdefault("input_source", "voice")
             self._latest_state = parsed
-            self._latest_payload = dict(payload)
+            self._latest_payload = dict(merged_payload)
             return self._create(
                 event_type="STATE",
                 state=parsed,
                 severity=_severity(parsed),
                 display_message=display_message,
+                payload=merged_payload,
+            )
+
+    def voice(self, text: str) -> DisplayEvent:
+        """Attach one finalized speech-recognition sentence to the current state."""
+        normalized = text.strip()
+        if not normalized or len(normalized) > 80:
+            raise ValueError("voice text must contain 1-80 characters")
+        with self._lock:
+            self._latest_voice_text = normalized
+            payload = dict(self._latest_payload)
+            payload["recognized_text"] = normalized
+            payload["input_source"] = "voice"
+            self._latest_payload = dict(payload)
+            return self._create(
+                event_type="STATE",
+                state=self._latest_state,
+                severity=_severity(self._latest_state),
+                display_message="",
+                payload=payload,
+            )
+
+    def listening(self, active: bool) -> DisplayEvent:
+        """Enter or leave the optional voice-listening substate of READY."""
+        with self._lock:
+            self._latest_state = RobotState.READY
+            self._latest_voice_text = None
+            payload = {"step": "VOICE_LISTENING"} if active else {}
+            self._latest_payload = dict(payload)
+            return self._create(
+                event_type="STATE",
+                state=RobotState.READY,
+                severity="INFO",
+                display_message="",
                 payload=payload,
             )
 
