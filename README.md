@@ -89,6 +89,34 @@ display.state(RobotState.MOVING_TO_HANDOVER, tool="grasper")
 `listening_stopped()`로 기본 요청 대기에 돌아갑니다. `REQUEST_RECEIVED`는 ASR
 완료가 아니라 지원 도구 해석과 로봇 명령 수락 뒤에 보냅니다.
 
+### 음성 요청 흐름
+
+```mermaid
+sequenceDiagram
+    actor User as 사용자
+    participant ASR as 요청 수신·ASR
+    participant SDK as RobotDisplay
+    participant Y700 as Lenovo Y700
+
+    ASR->>SDK: state(READY)
+    SDK-->>Y700: 요청 대기
+    ASR->>SDK: listening_started()
+    SDK-->>Y700: READY · 음성 인식 중
+    User->>ASR: "그래스퍼 주세요"
+    ASR->>SDK: voice(final_text)
+    SDK-->>Y700: READY · 인식 문장 확인
+    alt 지원 도구 해석·명령 수락
+        ASR->>SDK: state(REQUEST_RECEIVED, tool)
+        SDK-->>Y700: 요청 접수
+    else 취소·무음·지원하지 않는 요청
+        ASR->>SDK: listening_stopped()
+        SDK-->>Y700: 기본 READY 복귀
+    end
+```
+
+`voice()` 호출만으로 로봇 동작을 시작하지 않습니다. 요청 계층이 문장을 검증하고
+명령을 수락한 뒤 `REQUEST_RECEIVED`를 보낸 다음 기존 runtime을 호출합니다.
+
 Receive–Place도 상태가 바뀌는 지점에서 한 줄씩 호출합니다.
 
 ```python
@@ -145,6 +173,21 @@ flowchart TB
 
 화면 컬러는 진행·대기 상태가 초록, `COMPLETED`가 파랑, `SAFE_WAIT`가 노랑,
 `ERROR`가 빨강입니다.
+
+## 로봇 개발자 전달 기준
+
+이 저장소의 `main`만 clone해도 SDK 설치, 로컬 simulator, Pick–Handover와
+Receive–Place 예제 실행이 가능합니다. 실제 현장 연동에는 다음 외부 정보가 함께
+필요합니다.
+
+- Lenovo Y700에 설치된 Orchestra Display `v0.3.0` APK
+- Y700의 고정 IP와 API 포트 `8080`
+- [API 전체 명세](https://freeskyes.github.io/orchestra-display/)
+- 실제 RB-Y1 runtime에서 상태를 보낼 함수 지점
+
+로봇 개발자는 먼저 `examples/send_demo.py`로 Y700 연결을 확인한 뒤, 같은 호출을
+기존 runtime의 상태 전환 지점에 옮깁니다. 이 저장소를 로봇 제어 소스와 합치거나
+SDK 응답을 모션 조건으로 사용할 필요는 없습니다.
 
 ## 구조
 
