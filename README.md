@@ -189,6 +189,51 @@ Receive–Place 예제 실행이 가능합니다. 실제 현장 연동에는 다
 기존 runtime의 상태 전환 지점에 옮깁니다. 이 저장소를 로봇 제어 소스와 합치거나
 SDK 응답을 모션 조건으로 사용할 필요는 없습니다.
 
+### 상태 emit 시점
+
+| 화면 상태 | 정확한 호출 시점 |
+|---|---|
+| `STARTING` | 프로그램·모델 초기화를 시작하기 직전 |
+| `READY` | 준비 자세와 요청 수신기가 모두 준비된 직후, 또는 정상 복귀 완료 후 |
+| `REQUEST_RECEIVED` | 최종 문장을 지원 도구로 해석하고 명령을 수락한 직후, runtime 실행 전 |
+| `DETECTING_TOOL` | 요청 도구 탐색 함수를 호출하기 직전 |
+| `PLANNING` | 팔 선택과 경로 계획을 시작하기 직전 |
+| `PICKING_TOOL` | pregrasp·grasp와 그리퍼 close를 시작하기 직전 |
+| `MOVING_TO_HANDOVER` | 파지 성공 후 전달 위치 이동을 시작하기 직전 |
+| `WAITING_FOR_HAND` | 안정적인 손 위치 획득을 기다리기 직전 |
+| `HAND_TRACKING` | 손 identity lock 성공 후 추적 servo를 시작하기 직전 |
+| `WAITING_FOR_RELEASE` | 기존 runtime이 안정적인 인계 대기 신호를 제공할 때만. 없으면 생략 |
+| `RELEASING_TOOL` | 인계 신호 확인 후 그리퍼 open 직전 |
+| `RETURNING` | 전달·배치 후 준비 자세 복귀를 시작하기 직전 |
+| `COMPLETED` | 전달 성공을 확인한 직후, `READY` 전환 전 |
+| `PREPARING` | 트레이 등록·점유 확인·빈 위치 선택을 시작하기 직전 |
+| `WAITING_FOR_TOOL` | fixed hold 도달 후 도구 삽입을 기다리기 직전 |
+| `RECEIVING_TOOL` | 삽입 신호 확인 후 그리퍼 close 직전 |
+| `PLACING_TOOL` | preplace·place·open·retreat 순서를 시작하기 직전 |
+| `SAFE_WAIT` | runtime이 복구·resume 가능한 hold를 명시적으로 판정했을 때만 |
+| `ERROR` | 원인을 알 수 없거나 실행을 종료하는 최상위 예외 처리에서 |
+
+음성은 마이크 입력 시작 시 `listening_started()`, 최종 문장 확정 시 `voice()`,
+지원 도구 해석과 명령 수락 완료 시 `REQUEST_RECEIVED` 순서로 호출합니다.
+
+### 그대로 전달할 구현 지시
+
+```text
+이 저장소의 README와 contract/states.json을 기준으로 기존 로봇 runtime에
+Orchestra Display 상태 전송을 연동해 주세요.
+
+1. RobotDisplay는 프로그램 시작 시 한 번만 생성하고 종료 시 close()합니다.
+2. 위 '상태 emit 시점'의 실제 코드 직전·직후에만 state()를 한 번 호출합니다.
+3. 매 프레임·제어 주기에는 호출하지 않습니다.
+4. WAITING_FOR_RELEASE는 기존의 안정적인 인계 신호가 있을 때만 연결하고,
+   새로운 힘·거리 임계값을 만들지 않습니다.
+5. SAFE_WAIT는 복구 가능한 명시적 hold에만 사용하고 나머지 종료 예외는 ERROR로 보냅니다.
+6. SDK 반환값, 태블릿 응답, Wi-Fi 상태를 로봇 모션의 실행·정지 조건으로 사용하지 않습니다.
+7. 기존 인식·계획·모션 로직과 안전 조건은 변경하지 않습니다.
+8. 구현 후 file:function 기준으로 각 상태를 넣은 위치와 선행 조건을 표로 보고하고,
+   simulator와 Y700에서 정상 흐름·오류 흐름을 검증해 주세요.
+```
+
 ## 구조
 
 ```text
