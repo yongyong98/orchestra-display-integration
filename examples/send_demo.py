@@ -9,10 +9,7 @@ import time
 from orchestra_display import PublisherSettings, RobotDisplay, RobotState
 
 
-SEQUENCE = (
-    RobotState.STARTING,
-    RobotState.READY,
-    RobotState.REQUEST_RECEIVED,
+ACTION_SEQUENCE = (
     RobotState.DETECTING_TOOL,
     RobotState.PLANNING,
     RobotState.PICKING_TOOL,
@@ -35,7 +32,24 @@ def main() -> None:
 
     settings = PublisherSettings(heartbeat_interval_s=0)
     with RobotDisplay(args.url, args.robot_id, settings=settings) as display:
-        for state in SEQUENCE:
+        for state in (RobotState.STARTING, RobotState.READY):
+            queued = display.state(state, tool="grasper")
+            print(f"queued={queued} state={state.value}")
+            time.sleep(max(args.interval, 0))
+
+        print(f"queued={display.listening_started()} substate=VOICE_LISTENING")
+        time.sleep(max(args.interval, 0))
+        print(f"queued={display.voice('그래스퍼 주세요')} substate=RECOGNIZED_TEXT")
+        time.sleep(max(args.interval, 0))
+        print(
+            "queued={} state={}".format(
+                display.state(RobotState.REQUEST_RECEIVED, tool="grasper"),
+                RobotState.REQUEST_RECEIVED.value,
+            )
+        )
+        time.sleep(max(args.interval, 0))
+
+        for state in ACTION_SEQUENCE:
             queued = display.state(state, tool="grasper")
             print(f"queued={queued} state={state.value}")
             time.sleep(max(args.interval, 0))

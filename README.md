@@ -74,10 +74,35 @@ display = RobotDisplay(
 화면의 의미가 바뀌는 지점에서 상태를 보냅니다.
 
 ```python
+display.state(RobotState.READY)
+display.listening_started()
+display.voice("그래스퍼를 회수해줘")
+display.state(RobotState.REQUEST_RECEIVED, tool="grasper")
 display.state(RobotState.PLANNING)
 display.state(RobotState.PICKING_TOOL, tool="grasper")
 display.state(RobotState.MOVING_TO_HANDOVER, tool="grasper")
 ```
+
+음성은 인식 완료 문장 하나만 보냅니다. 오디오, confidence, 중간 인식 결과는
+보내지 않습니다. `listening_started()`와 `voice()`가 만드는 화면은 모두 `READY`
+내부 substate이며 공식 state는 19개로 유지됩니다. 취소·인식 실패 시에만
+`listening_stopped()`로 기본 요청 대기에 돌아갑니다. `REQUEST_RECEIVED`는 ASR
+완료가 아니라 지원 도구 해석과 로봇 명령 수락 뒤에 보냅니다.
+
+Receive–Place도 상태가 바뀌는 지점에서 한 줄씩 호출합니다.
+
+```python
+display.state(RobotState.PREPARING)
+display.state(RobotState.WAITING_FOR_HAND)
+display.state(RobotState.WAITING_FOR_TOOL)
+display.state(RobotState.RECEIVING_TOOL)
+display.state(RobotState.PLACING_TOOL)
+display.state(RobotState.RETURNING)
+display.state(RobotState.READY)
+```
+
+추가 `workflow` 인자는 없습니다. 앱이 최근 state로 Pick–Handover와 Receive–Place를
+자동 구분합니다.
 
 프로그램을 종료할 때 전송 작업을 정리합니다.
 
@@ -100,22 +125,26 @@ display.close()
 
 ## 상태 코드
 
-상태 코드는 [`contract/states.json`](contract/states.json)에서 관리합니다. 정상 흐름은 다음과 같습니다.
+19개 상태 코드는 [`contract/states.json`](contract/states.json)에서 관리합니다.
+두 정상 흐름은 다음과 같습니다.
 
 ```mermaid
-flowchart LR
-    A["준비<br/>STARTING → READY"] --> B["요청<br/>REQUEST_RECEIVED"]
-    B --> C["탐색<br/>DETECTING_TOOL → PLANNING"]
-    C --> D["집기<br/>PICKING_TOOL"]
-    D --> E["전달<br/>MOVING_TO_HANDOVER<br/>→ WAITING_FOR_HAND<br/>→ HAND_TRACKING<br/>→ WAITING_FOR_RELEASE<br/>→ RELEASING_TOOL"]
-    E --> F["복귀·완료<br/>RETURNING → COMPLETED"]
-
-    X["어느 단계"] -.-> S["SAFE_WAIT"]
-    S -.-> A
-    X -.-> R["ERROR"]
+flowchart TB
+    A["STARTING → READY → REQUEST_RECEIVED"] --> B{"요청 종류"}
+    B -->|Pick–Handover| P["DETECTING_TOOL → PLANNING → PICKING_TOOL<br/>→ MOVING_TO_HANDOVER → WAITING_FOR_HAND<br/>→ HAND_TRACKING → WAITING_FOR_RELEASE<br/>→ RELEASING_TOOL → RETURNING → COMPLETED"]
+    B -->|Receive–Place| R["PREPARING → WAITING_FOR_HAND → WAITING_FOR_TOOL<br/>→ RECEIVING_TOOL → PLACING_TOOL → RETURNING → READY"]
+    P -.-> S["SAFE_WAIT / ERROR"]
+    R -.-> S
 ```
 
-`SAFE_WAIT`는 복구 가능한 안전 대기, `ERROR`는 담당자 확인이 필요한 오류입니다. `READY`, `REQUEST_RECEIVED`, `WAITING_FOR_RELEASE`, `SAFE_WAIT`의 실제 발생 시점은 로봇 동작 정의를 확인한 뒤 확정합니다.
+`READY`는 로봇 준비 자세와 요청 수신기가 모두 준비됐을 때 또는 정상 복귀 후,
+`REQUEST_RECEIVED`는 지원 도구로 해석한 명령을 수락한 뒤 보냅니다.
+`WAITING_FOR_RELEASE`는 기존 runtime에 안정적인 인계 대기 신호가 있을 때만 사용하고
+없으면 생략합니다. `SAFE_WAIT`는 복구·resume 가능한 명시적 hold에만 사용하며,
+원인 불명 또는 종료 예외는 `ERROR`입니다.
+
+화면 컬러는 진행·대기 상태가 초록, `COMPLETED`가 파랑, `SAFE_WAIT`가 노랑,
+`ERROR`가 빨강입니다.
 
 ## 구조
 
