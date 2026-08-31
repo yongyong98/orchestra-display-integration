@@ -56,9 +56,16 @@ python3 examples/send_demo.py
 http://127.0.0.1:8080/admin
 ```
 
-이 테스트는 요청 형식, 비동기 큐, 상태 순서와 재시도를 확인합니다. 실제 Lenovo 화면과 Wi-Fi 연결은 장비가 준비된 뒤 한 번 더 확인해야 합니다.
+이 테스트는 요청 형식, 비동기 큐, 상태 순서와 재시도를 확인합니다. 실제 Lenovo
+화면과 Wi-Fi 연결은 장비가 준비된 뒤 다시 확인합니다.
+
+`send_demo.py`와 `send_receive_place.py`의 `time.sleep()`은 화면을 확인하기 위한
+간격입니다. 실제 로봇의 상태 전환 조건으로 사용하지 않습니다.
 
 ## 로봇 코드 연동
+
+실제 runtime 연결 형태는 [`examples/runtime_integration.py`](examples/runtime_integration.py)를
+참고합니다. 각 hook을 기존 runtime의 해당 상태 전환 지점에서 호출합니다.
 
 프로그램 시작 시 한 번 생성합니다.
 
@@ -83,11 +90,11 @@ display.state(RobotState.PICKING_TOOL, tool="grasper")
 display.state(RobotState.MOVING_TO_HANDOVER, tool="grasper")
 ```
 
-음성은 인식 완료 문장 하나만 보냅니다. 오디오, confidence, 중간 인식 결과는
+음성 인식에서 확정된 도구명 하나만 보냅니다. 오디오, confidence, 중간 인식 결과는
 보내지 않습니다. `listening_started()`와 `voice()`가 만드는 화면은 모두 `READY`
 내부 substate이며 공식 state는 19개로 유지됩니다. 취소·인식 실패 시에만
 `listening_stopped()`로 기본 요청 대기에 돌아갑니다. `REQUEST_RECEIVED`는 ASR
-완료가 아니라 지원 도구 해석과 로봇 명령 수락 뒤에 보냅니다.
+완료가 아니라 지원 도구 확인과 로봇 명령 수락 뒤에 보냅니다.
 
 ### 음성 요청 흐름
 
@@ -114,7 +121,7 @@ sequenceDiagram
     end
 ```
 
-`voice()` 호출만으로 로봇 동작을 시작하지 않습니다. 요청 계층이 문장을 검증하고
+`voice()` 호출만으로 로봇 동작을 시작하지 않습니다. 요청 계층이 도구명을 검증하고
 명령을 수락한 뒤 `REQUEST_RECEIVED`를 보낸 다음 기존 runtime을 호출합니다.
 
 Receive–Place도 상태가 바뀌는 지점에서 한 줄씩 호출합니다.
@@ -140,7 +147,7 @@ display.close()
 
 `state()`는 네트워크 전송 완료를 기다리지 않습니다. 반환값이나 태블릿 연결 상태를 로봇 동작 조건으로 사용하지 마세요.
 
-## 주소 변경
+## Lenovo Y700 연결
 
 로컬 테스트와 Lenovo 연동의 코드 차이는 주소뿐입니다.
 
@@ -149,7 +156,13 @@ display.close()
 | 노트북 내부 테스트 | `http://127.0.0.1:8080` |
 | 도구 전달 로봇 Lenovo 예시 | `http://10.77.0.10:8080` |
 
-현장에서는 공유기의 DHCP 예약으로 Lenovo 주소를 고정하고 실제 할당 주소를 설정합니다.
+현장 연결 전 다음 항목을 확인합니다.
+
+- Lenovo Y700에 Orchestra Display `v0.3.0` APK가 설치되어 있어야 합니다.
+- 로봇 노트북과 Y700은 같은 네트워크에 연결합니다.
+- 공유기의 DHCP 예약으로 Y700 주소를 고정합니다.
+- `tablet_url`에는 실제 Y700 주소와 API 포트 `8080`을 설정합니다.
+- 요청·응답 필드는 [API 전체 명세](https://freeskyes.github.io/orchestra-display/)에서 확인합니다.
 
 ## 상태 코드
 
@@ -165,38 +178,13 @@ flowchart TB
     R -.-> S
 ```
 
-`READY`는 로봇 준비 자세와 요청 수신기가 모두 준비됐을 때 또는 정상 복귀 후,
-`REQUEST_RECEIVED`는 지원 도구로 해석한 명령을 수락한 뒤 보냅니다.
-`WAITING_FOR_RELEASE`는 기존 runtime에 안정적인 인계 대기 신호가 있을 때만 사용하고
-없으면 생략합니다. `SAFE_WAIT`는 복구·resume 가능한 명시적 hold에만 사용하며,
-원인 불명 또는 종료 예외는 `ERROR`입니다.
-
-화면 컬러는 진행·대기 상태가 초록, `COMPLETED`가 파랑, `SAFE_WAIT`가 노랑,
-`ERROR`가 빨강입니다.
-
-## 로봇 개발자 전달 기준
-
-이 저장소의 `main`만 clone해도 SDK 설치, 로컬 simulator, Pick–Handover와
-Receive–Place 예제 실행이 가능합니다. 실제 현장 연동에는 다음 외부 정보가 함께
-필요합니다.
-
-- Lenovo Y700에 설치된 Orchestra Display `v0.3.0` APK
-- Y700의 고정 IP와 API 포트 `8080`
-- [API 전체 명세](https://freeskyes.github.io/orchestra-display/)
-- 실제 RB-Y1 runtime에서 상태를 보낼 함수 지점
-
-`examples/send_demo.py`와 `examples/send_receive_place.py`는 Y700 연결과 전체 화면
-순서를 확인하는 시험용입니다. 실제 runtime 연동은 `examples/runtime_integration.py`의
-event hook 형태를 참고하여 아래 표의 상태 전환 지점에 연결합니다. 화면 시험 예제의
-`time.sleep()`은 실제 모션의 전환 조건으로 사용하지 않습니다.
-
-### 상태 emit 시점
+### 호출 시점
 
 | 화면 상태 | 정확한 호출 시점 |
 |---|---|
 | `STARTING` | 프로그램·모델 초기화를 시작하기 직전 |
 | `READY` | 준비 자세와 요청 수신기가 모두 준비된 직후, 또는 정상 복귀 완료 후 |
-| `REQUEST_RECEIVED` | 최종 문장을 지원 도구로 해석하고 명령을 수락한 직후, runtime 실행 전 |
+| `REQUEST_RECEIVED` | 확정 도구명을 확인하고 명령을 수락한 직후, runtime 실행 전 |
 | `DETECTING_TOOL` | 요청 도구 탐색 함수를 호출하기 직전 |
 | `PLANNING` | 팔 선택과 경로 계획을 시작하기 직전 |
 | `PICKING_TOOL` | pregrasp·grasp와 그리퍼 close를 시작하기 직전 |
@@ -214,7 +202,7 @@ event hook 형태를 참고하여 아래 표의 상태 전환 지점에 연결�
 | `SAFE_WAIT` | runtime이 복구·resume 가능한 hold를 명시적으로 판정했을 때만 |
 | `ERROR` | 원인을 알 수 없거나 실행을 종료하는 최상위 예외 처리에서 |
 
-음성은 마이크 입력 시작 시 `listening_started()`, 최종 문장 확정 시 `voice()`,
+음성은 마이크 입력 시작 시 `listening_started()`, 도구명 확정 시 `voice()`,
 지원 도구 해석과 명령 수락 완료 시 `REQUEST_RECEIVED` 순서로 호출합니다.
 
 ## 구조
@@ -235,5 +223,3 @@ src/orchestra_display/
 ```bash
 PYTHONPATH=src python3 -m unittest discover -s tests -p 'test_*.py'
 ```
-
-API 전체 명세: <https://freeskyes.github.io/orchestra-display/>
