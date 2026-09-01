@@ -51,6 +51,7 @@ class AsyncEventPublisher:
         )
         self._closed = False
         self._lifecycle_lock = threading.Lock()
+        self._heartbeat_pending = False
         self._heartbeat_stop = threading.Event()
         self._sender_abort = threading.Event()
         self._worker = threading.Thread(
@@ -75,6 +76,12 @@ class AsyncEventPublisher:
     ) -> bool:
         event = self._event_factory.state(state, display_message, payload)
         return self._enqueue(event.as_dict())
+
+    def emit_voice(self, text: str) -> bool:
+        return self._enqueue(self._event_factory.voice(text).as_dict())
+
+    def emit_listening(self, active: bool) -> bool:
+        return self._enqueue(self._event_factory.listening(active).as_dict())
 
     def emit_heartbeat(self, payload: dict[str, Any] | None = None) -> bool:
         return self._enqueue(self._event_factory.heartbeat(payload).as_dict())
@@ -113,21 +120,27 @@ class AsyncEventPublisher:
             self._worker.join(timeout=self._remaining(deadline))
 
     def _enqueue(self, event: dict[str, Any]) -> bool:
+        is_heartbeat = event["event_type"] == "HEARTBEAT"
         with self._lifecycle_lock:
             if self._closed:
                 return False
+            if is_heartbeat:
+                if self._heartbeat_pending:
+                    return False
+                self._heartbeat_pending = True
+        try:
+            self._queue.put_nowait(event)
+            return True
+        except queue.Full:
+            if is_heartbeat:
+                self._complete_heartbeat()
+                return False
+            self._drop_oldest()
             try:
                 self._queue.put_nowait(event)
                 return True
             except queue.Full:
-                if event["event_type"] == "HEARTBEAT":
-                    return False
-                self._drop_oldest()
-                try:
-                    self._queue.put_nowait(event)
-                    return True
-                except queue.Full:
-                    return False
+                return False
 
     @staticmethod
     def _remaining(deadline: float) -> float:
@@ -136,11 +149,13 @@ class AsyncEventPublisher:
     def _discard_pending(self) -> None:
         while True:
             try:
-                self._queue.get_nowait()
+                dropped = self._queue.get_nowait()
             except queue.Empty:
                 return
             else:
                 self._queue.task_done()
+                if dropped is not None and dropped["event_type"] == "HEARTBEAT":
+                    self._complete_heartbeat()
 
     def _enqueue_stop_sentinel(self) -> None:
         while True:
@@ -154,6 +169,8 @@ class AsyncEventPublisher:
         try:
             dropped = self._queue.get_nowait()
             self._queue.task_done()
+            if dropped is not None and dropped["event_type"] == "HEARTBEAT":
+                self._complete_heartbeat()
             LOGGER.warning(
                 "display queue full; dropped event %s",
                 None if dropped is None else dropped.get("event_id"),
@@ -175,6 +192,8 @@ class AsyncEventPublisher:
                         event.get("event_id"),
                     )
             finally:
+                if event is not None and event["event_type"] == "HEARTBEAT":
+                    self._complete_heartbeat()
                 self._queue.task_done()
 
     def _run_heartbeat(self) -> None:
@@ -183,7 +202,10 @@ class AsyncEventPublisher:
             self.emit_heartbeat({"source": "orchestra-display-integration"})
 
     def _send_with_retry(self, event: dict[str, Any]) -> None:
-        for attempt in range(self._settings.max_attempts):
+        max_attempts = (
+            1 if event["event_type"] == "HEARTBEAT" else self._settings.max_attempts
+        )
+        for attempt in range(max_attempts):
             if self._sender_abort.is_set():
                 return
             try:
@@ -195,8 +217,12 @@ class AsyncEventPublisher:
             except RetryableTransportError:
                 if self._sender_abort.is_set():
                     return
-                if attempt + 1 < self._settings.max_attempts:
+                if attempt + 1 < max_attempts:
                     backoff_s = min(0.25 * (2**attempt), 2.0)
                     if self._sender_abort.wait(timeout=backoff_s):
                         return
         LOGGER.warning("display event delivery failed: %s", event["event_id"])
+
+    def _complete_heartbeat(self) -> None:
+        with self._lifecycle_lock:
+            self._heartbeat_pending = False

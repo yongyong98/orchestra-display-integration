@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Play every Pick–Handover screen for UI and connection verification.
+"""Play every Receive–Place screen for UI and connection verification.
 
 The fixed interval is only for visual inspection. For robot runtime integration, use
 ``runtime_integration.py`` and call each hook from an existing state transition.
@@ -13,17 +13,14 @@ import time
 from orchestra_display import PublisherSettings, RobotDisplay, RobotState
 
 
-ACTION_SEQUENCE = (
-    RobotState.DETECTING_TOOL,
-    RobotState.PLANNING,
-    RobotState.PICKING_TOOL,
-    RobotState.MOVING_TO_HANDOVER,
+SEQUENCE = (
+    RobotState.PREPARING,
     RobotState.WAITING_FOR_HAND,
-    RobotState.HAND_TRACKING,
-    RobotState.WAITING_FOR_RELEASE,  # Optional in runtime; included for UI coverage.
-    RobotState.RELEASING_TOOL,
+    RobotState.WAITING_FOR_TOOL,
+    RobotState.RECEIVING_TOOL,
+    RobotState.PLACING_TOOL,
     RobotState.RETURNING,
-    RobotState.COMPLETED,
+    RobotState.READY,
 )
 
 
@@ -31,7 +28,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--url", default="http://127.0.0.1:8080")
     parser.add_argument("--robot-id", default="rby1-instrument")
-    parser.add_argument("--interval", type=float, default=0.5)
+    parser.add_argument("--interval", type=float, default=0.8)
     args = parser.parse_args()
 
     settings = PublisherSettings(heartbeat_interval_s=0)
@@ -43,17 +40,14 @@ def main() -> None:
 
         print(f"queued={display.listening_started()} substate=VOICE_LISTENING")
         time.sleep(max(args.interval, 0))
-        print(f"queued={display.voice('그래스퍼')} substate=RECOGNIZED_TEXT")
+        queued = display.voice("그래스퍼")
+        print(f"queued={queued} substate=RECOGNIZED_TEXT")
         time.sleep(max(args.interval, 0))
-        print(
-            "queued={} state={}".format(
-                display.state(RobotState.REQUEST_RECEIVED, tool="grasper"),
-                RobotState.REQUEST_RECEIVED.value,
-            )
-        )
+        queued = display.state(RobotState.REQUEST_RECEIVED, tool="grasper")
+        print(f"queued={queued} state={RobotState.REQUEST_RECEIVED.value}")
         time.sleep(max(args.interval, 0))
 
-        for state in ACTION_SEQUENCE:
+        for state in SEQUENCE:
             queued = display.state(state, tool="grasper")
             print(f"queued={queued} state={state.value}")
             time.sleep(max(args.interval, 0))

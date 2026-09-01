@@ -57,6 +57,22 @@ class RobotDisplay:
             LOGGER.error("unknown display state: %s", state)
             return False
 
+    def voice(self, text: str) -> bool:
+        """Queue finalized recognition text; a tool noun is recommended."""
+        try:
+            return self._publisher.emit_voice(text)
+        except (AttributeError, ValueError, TypeError):
+            LOGGER.error("voice text must be a 1-80 character string")
+            return False
+
+    def listening_started(self) -> bool:
+        """Show the conditional voice-listening UI inside READY."""
+        return self._publisher.emit_listening(active=True)
+
+    def listening_stopped(self) -> bool:
+        """Return to the idle READY UI after a cancelled or empty listen."""
+        return self._publisher.emit_listening(active=False)
+
     def flush(self, timeout_s: float = 5.0) -> bool:
         return self._publisher.flush(timeout_s)
 
