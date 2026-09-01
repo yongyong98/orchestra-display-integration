@@ -14,10 +14,10 @@
     {"code": "RELEASING_TOOL", "stage": "전달", "display": "도구를 건네고 있어요", "integration": "연결 가능"},
     {"code": "RETURNING", "stage": "복귀", "display": "제자리로 돌아가고 있어요", "integration": "연결 가능"},
     {"code": "COMPLETED", "stage": "완료", "display": "전달을 완료했어요", "integration": "연결 가능"},
-    {"code": "PREPARING", "stage": "회수·배치", "display": "트레이에 놓을 위치를 준비하고 있어요", "integration": "RBY1 emit 추가 필요"},
-    {"code": "WAITING_FOR_TOOL", "stage": "회수·배치", "display": "도구를 건네주세요", "integration": "RBY1 emit 추가 필요"},
-    {"code": "RECEIVING_TOOL", "stage": "회수·배치", "display": "도구를 잡고 있어요. 잠시 유지해 주세요", "integration": "RBY1 emit 추가 필요"},
-    {"code": "PLACING_TOOL", "stage": "회수·배치", "display": "도구를 트레이에 놓고 있어요", "integration": "RBY1 emit 추가 필요"},
+    {"code": "PREPARING", "stage": "회수·배치", "display": "트레이에 놓을 위치를 준비하고 있어요", "integration": "CuRobo 연결 완료"},
+    {"code": "WAITING_FOR_TOOL", "stage": "회수·배치", "display": "도구를 건네주세요", "integration": "CuRobo 연결 완료"},
+    {"code": "RECEIVING_TOOL", "stage": "회수·배치", "display": "도구를 잡고 있어요. 잠시 유지해 주세요", "integration": "CuRobo 연결 완료"},
+    {"code": "PLACING_TOOL", "stage": "회수·배치", "display": "도구를 트레이에 놓고 있어요", "integration": "CuRobo 연결 완료"},
     {"code": "SAFE_WAIT", "stage": "안전", "display": "안전을 위해 잠시 기다릴게요", "integration": "복구·resume 가능한 명시적 hold에만 사용"},
     {"code": "ERROR", "stage": "안전", "display": "담당자가 확인하고 있어요", "integration": "연결 가능"}
   ]
