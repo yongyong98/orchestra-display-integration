@@ -50,6 +50,7 @@ class AsyncEventPublisher:
             maxsize=settings.queue_size
         )
         self._closed = False
+        self._delivery_failure_warned = False
         self._lifecycle_lock = threading.Lock()
         self._heartbeat_pending = False
         self._heartbeat_stop = threading.Event()
@@ -221,7 +222,16 @@ class AsyncEventPublisher:
                     backoff_s = min(0.25 * (2**attempt), 2.0)
                     if self._sender_abort.wait(timeout=backoff_s):
                         return
-        LOGGER.warning("display event delivery failed: %s", event["event_id"])
+        # Only the sender thread updates this per-client diagnostic latch.
+        if not self._delivery_failure_warned:
+            self._delivery_failure_warned = True
+            LOGGER.warning(
+                "display event delivery failed: %s "
+                "(further failures logged at DEBUG; delivery continues)",
+                event["event_id"],
+            )
+        else:
+            LOGGER.debug("display event delivery failed: %s", event["event_id"])
 
     def _complete_heartbeat(self) -> None:
         with self._lifecycle_lock:

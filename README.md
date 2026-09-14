@@ -10,6 +10,10 @@ Lenovo 태블릿이 없을 때 사용할 로컬 수신 서버도 포함합니다
 `display.state()`는 상태를 큐에 넣고 바로 반환합니다. HTTP 전송은 별도 작업
 스레드에서 처리합니다.
 
+연결 실패 시 `display event delivery failed` 경고는 클라이언트당 한 번만
+표시합니다(CuRobo에서는 실행당 한 번). 이후 같은 전송 실패는 DEBUG 수준에
+이벤트 ID를 남기며, 전송·재시도는 계속됩니다. 다른 오류 경고는 유지합니다.
+
 ```mermaid
 flowchart LR
     A["로봇 상태 변경"] --> B["display.state(state)"]

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import threading
 import time
 import unittest
@@ -8,7 +9,7 @@ from typing import Any
 from unittest import mock
 
 from orchestra_display import PublisherSettings, RobotDisplay, RobotState
-from orchestra_display.transport import RetryableTransportError
+from orchestra_display.transport import PermanentTransportError, RetryableTransportError
 
 
 class RecordingTransport:
@@ -58,6 +59,67 @@ class BlockingHeartbeatTransport:
 
 
 class RobotDisplayTest(unittest.TestCase):
+    def test_delivery_failure_warns_once_without_changing_retries_or_recovery(self) -> None:
+        transport = mock.Mock()
+        failure = RetryableTransportError("offline")
+        transport.send.side_effect = [failure, failure, None, failure]
+        with self.assertLogs("orchestra_display.publisher", level="DEBUG") as logs:
+            with RobotDisplay(
+                "http://127.0.0.1:8080", "rby1-instrument", transport=transport,
+                settings=PublisherSettings(max_attempts=2, heartbeat_interval_s=0),
+            ) as display:
+                self.assertTrue(display.state(RobotState.PLANNING))
+                self.assertTrue(display.state(RobotState.PICKING_TOOL))
+                self.assertTrue(display._publisher.emit_heartbeat())
+                self.assertTrue(display.flush(timeout_s=2))
+                self.assertTrue(display._publisher._worker.is_alive())
+        calls = transport.send.call_args_list
+        self.assertEqual(len(calls), 4)  # State: two attempts; heartbeat: one.
+        self.assertEqual(calls[0].args[0]["event_id"], calls[1].args[0]["event_id"])
+        self.assertEqual(calls[2].args[0]["state"], "PICKING_TOOL")
+        self.assertEqual(calls[3].args[0]["event_type"], "HEARTBEAT")
+        self.assertEqual([r.levelno for r in logs.records], [logging.WARNING, logging.DEBUG])
+        self.assertIn(calls[0].args[0]["event_id"], logs.records[0].getMessage())
+        self.assertIn(calls[3].args[0]["event_id"], logs.records[1].getMessage())
+        self.assertFalse(display._publisher._worker.is_alive())
+
+    def test_new_display_gets_its_own_single_failure_warning(self) -> None:
+        with self.assertLogs("orchestra_display.publisher", level="DEBUG") as logs:
+            for _ in range(2):
+                transport = mock.Mock()
+                transport.send.side_effect = RetryableTransportError("offline")
+                with RobotDisplay(
+                    "http://127.0.0.1:8080", "rby1-instrument", transport=transport,
+                    settings=PublisherSettings(max_attempts=1, heartbeat_interval_s=0),
+                ) as display:
+                    for _ in range(4):
+                        self.assertTrue(display.state(RobotState.PLANNING))
+                    self.assertTrue(display.flush(timeout_s=1))
+                self.assertEqual(transport.send.call_count, 4)
+        self.assertEqual(sum(r.levelno == logging.WARNING for r in logs.records), 2)
+        self.assertEqual(sum(r.levelno == logging.DEBUG for r in logs.records), 6)
+
+    def test_failure_warning_does_not_suppress_other_errors(self) -> None:
+        transport = mock.Mock()
+        transport.send.side_effect = [
+            RetryableTransportError("offline"),
+            PermanentTransportError("rejected"),
+            RuntimeError("unexpected"), None,
+        ]
+        with self.assertLogs("orchestra_display.publisher", level="DEBUG") as logs:
+            with RobotDisplay(
+                "http://127.0.0.1:8080", "rby1-instrument", transport=transport,
+                settings=PublisherSettings(max_attempts=1, heartbeat_interval_s=0),
+            ) as display:
+                for _ in range(4):
+                    self.assertTrue(display.state(RobotState.PLANNING))
+                self.assertTrue(display.flush(timeout_s=1))
+        self.assertEqual(transport.send.call_count, 4)
+        self.assertEqual([r.levelno for r in logs.records],
+                         [logging.WARNING, logging.ERROR, logging.ERROR])
+        self.assertIn("display event rejected", logs.records[1].getMessage())
+        self.assertIn("unexpected display event delivery error", logs.records[2].getMessage())
+
     def test_state_returns_before_slow_transport_finishes(self) -> None:
         transport = RecordingTransport(delay_s=0.2)
         display = RobotDisplay(
